@@ -17,7 +17,7 @@ import tkinter as tk
 from tkinter import ttk
 
 
-##creating key
+# creating key
 def key_creation(password):
     kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), salt=b'\xfaz\xb5\xf2|\xa1z\xa9\xfe\xd1F@1\xaa\x8a\xc2', iterations=2048,
                      length=32, backend=default_backend())
@@ -82,14 +82,14 @@ def print_help():
     print('dump crt - вывести сертификат в файл')
 
 # Initialize database
-def init_database(db_name):
+def init_database(db_name, password):
     conn = sqlite3.connect(':memory:')
     # conn.execute('CREATE TABLE PRIVATEKEY (ID INTEGER PRIMARY KEY AUTOINCREMENT, KEY TEXT NOT NULL);')
     # conn.execute('CREATE TABLE CSR (ID INTEGER PRIMARY KEY AUTOINCREMENT, NAME TEXT NOT NULL, CSR TEXT NOT NULL, PRIVATEKEY_ID INT NOT NULL, FOREIGN KEY (PRIVATEKEY_ID) REFERENCES PRIVATEKEY(ID));')
     # conn.execute('CREATE TABLE CERT (ID INTEGER PRIMARY KEY AUTOINCREMENT, NAME TEXT NOT NULL, CRT TEXT NOT NULL, CSR_ID INT NOT NULL, CACERT_ID INT NOT NULL, FOREIGN KEY (CSR_ID) REFERENCES CSR(ID), FOREIGN KEY (CACERT_ID) REFERENCES CACERT(ID));')
     conn.execute('CREATE TABLE CERT (ID INTEGER PRIMARY KEY AUTOINCREMENT, NAME TEXT NOT NULL, CSR TEXT, PRVKEY TEXT, CRT TEXT);')
     conn.execute('CREATE TABLE CACERT (ID INTEGER PRIMARY KEY AUTOINCREMENT, NAME TEXT NOT NULL, CRT TEXT NOT NULL, SIGNED INT);')
-    save_cdb(conn, db_name, bytes(getpass('Введите пароль для шифрования: '), encoding = 'utf-8'))
+    save_cdb(conn, db_name, password)
     conn.close()
 
 def create_prvkey(db_name, password):
@@ -181,7 +181,7 @@ def console():
         if user_command == 'help':
             print_help()
         elif user_command == 'init':
-            init_database(input("Введите имя БД: "))
+            init_database(input("Введите имя БД: "), getpass('Введите пароль для шифрования: '))
         elif user_command == 'create prvkey':
             create_prvkey(input("Введите имя БД: "),
                           bytes(getpass('Введите пароль для шифрования: '), encoding='utf-8'))
@@ -203,6 +203,7 @@ def gui():
 
     win.mainloop()
 
+
 class CertManagerApp(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -223,29 +224,92 @@ class CertManagerApp(tk.Tk):
         self.table_frame.update_table(db_name, password)
         self.put_frames()
 
+
 class AddAction(tk.Frame):
     def __init__(self, parent):
         super().__init__(parent)
         self['background'] = self.master['background']
+        self.selected_csrs = []
+
+        self.db_select_label = tk.Label(self, text='Выберите БД', width=20)
+        self.db_select = ttk.Combobox(self, values=list_db(), state='readonly', postcommand = self.update_db_list)
+        self.db_select_passwd_label = tk.Label(self, text='Введите пароль', width=20)
+        self.db_select_passwd = tk.Entry(self, show='*')
+        self.db_connect = tk.Button(self, text='Подключится к БД', command=self.db_connect)
+        self.db_disconnect = tk.Button(self, text='Отключится от БД', command=self.db_disconnect, state=tk.DISABLED)
+        self.db_list_certs = tk.Button(self, text='Показать сертификаты', command=self.list_certs, state=tk.DISABLED)
+        self.db_create = tk.Button(self, text='Создать новую БД', command=self.db_create)
+        self.create_csr = tk.Button(self, text='Создать запрос сертификата CSR', command=self.export_cert, state=tk.DISABLED)
+        self.import_pem = tk.Button(self, text='Импортировать открытый ключ', command=self.export_cert, state=tk.DISABLED)
+        self.export_jks = tk.Button(self, text='Выгрузить сертификат в JKS', command=self.export_cert, state=tk.DISABLED)
+        self.export_pem = tk.Button(self, text='Выгрузить сертификат в PEM', command=self.export_cert, state=tk.DISABLED)
+        self.export_p12 = tk.Button(self, text='Выгрузить сертификат в p12', command=self.export_cert, state=tk.DISABLED)
+
         self.put_widgets()
 
     def put_widgets(self):
-        # Set action widgets
-        self.db_select_label = tk.Label(self, text='Выберите БД')
-        self.db_select = ttk.Combobox(self, values=list_db(), state='readonly')
-        self.db_select_passwd_label = tk.Label(self, text='Введите пароль')
-        self.db_select_passwd = tk.Entry(self, show='*')
-        self.db_list_certs = tk.Button(self, text='Показать сертификаты', command=self.list_certs)
-
         # Set action grid
-        self.db_select_label.grid(row=0, column=0)
-        self.db_select.grid(row=0, column=1)
-        self.db_select_passwd_label.grid(row=1, column=0)
-        self.db_select_passwd.grid(row=1, column=1)
-        self.db_list_certs.grid(row=2, column=0, columnspan=2)
+        self.db_select_label.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        self.db_select.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+        self.db_select_passwd_label.grid(row=1, column=0, padx=5, pady=5)
+        self.db_select_passwd.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
+        self.db_connect.grid(row=2, column=0, sticky="nsew", padx=5, pady=5)
+        self.db_disconnect.grid(row=2, column=1, sticky="nsew", padx=5, pady=5)
+        self.db_list_certs.grid(row=3, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
+        self.db_create.grid(row=4, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
+        self.create_csr.grid(row=0, column=2, sticky="nsew", padx=5, pady=5)
+        self.import_pem.grid(row=1, column=2, sticky="nsew", padx=5, pady=5)
+        self.export_jks.grid(row=0, column=3, sticky="nsew", padx=5, pady=5)
+        self.export_pem.grid(row=1, column=3, sticky="nsew", padx=5, pady=5)
+        self.export_p12.grid(row=2, column=3, sticky="nsew", padx=5, pady=5)
+
+    def update_db_list(self):
+        self.db_select['values'] = list_db()
 
     def list_certs(self):
         self.master.update_table(self.db_select.get(), self.db_select_passwd.get())
+
+    def db_connect(self):
+        try:
+            list_csrs(self.db_select.get(), self.db_select_passwd.get())
+        except cryptography.fernet.InvalidToken:
+            print('Неверный пароль')
+        self.db_select['state'] = tk.DISABLED
+        self.db_select_passwd['state'] = tk.DISABLED
+        self.db_connect['state'] = tk.DISABLED
+        self.db_create['state'] = tk.DISABLED
+        self.db_disconnect['state'] = tk.NORMAL
+        self.db_list_certs['state'] = tk.NORMAL
+        self.create_csr['state'] = tk.NORMAL
+        self.import_pem['state'] = tk.NORMAL
+        self.export_jks['state'] = tk.NORMAL
+        self.export_pem['state'] = tk.NORMAL
+        self.export_p12['state'] = tk.NORMAL
+
+    def db_disconnect(self):
+        self.db_select['state'] = tk.NORMAL
+        self.db_select_passwd['state'] = tk.NORMAL
+        self.db_connect['state'] = tk.NORMAL
+        self.db_create['state'] = tk.NORMAL
+        self.db_disconnect['state'] = tk.DISABLED
+        self.db_list_certs['state'] = tk.DISABLED
+        self.create_csr['state'] = tk.DISABLED
+        self.import_pem['state'] = tk.DISABLED
+        self.export_jks['state'] = tk.DISABLED
+        self.export_pem['state'] = tk.DISABLED
+        self.export_p12['state'] = tk.DISABLED
+
+    def db_create(self):
+        db_create_windows = CreateDb(self)
+        db_params = db_create_windows.create_db()
+        init_database(db_params['db_name'], db_params['password'])
+
+    def export_cert(self):
+        select_csr_window = SelectCsr(self)
+        self.selected_csrs = select_csr_window.select_csr()
+        current_item = self.master.table_frame.table.focus()
+        print(self.master.table_frame.table.item(current_item)['values'])
+
 
 class AddTable(tk.Frame):
     def __init__(self, parent):
@@ -275,6 +339,40 @@ class AddTable(tk.Frame):
         ysb = ttk.Scrollbar(self, orient=tk.VERTICAL, command=self.table.yview)
         self.table.configure(yscroll=ysb.set)
         self.table.pack(expand=tk.YES, fill=tk.BOTH)
+
+
+class SelectCsr(tk.Toplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+
+    def select_csr(self):
+        self.grab_set()
+        self.wait_window()
+        return
+
+class CreateDb(tk.Toplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.db_name_var = tk.StringVar()
+        self.password_var = tk.StringVar()
+
+        self.db_name_label = tk.Label(self, text='Введите имя БД', width=20)
+        self.db_passwd_label = tk.Label(self, text='Введите пароль')
+        self.db_name = tk.Entry(self, textvariable=self.db_name_var)
+        self.db_passwd = tk.Entry(self, show='*', textvariable=self.password_var)
+        self.submit = tk.Button(self, text="Создать", command=self.destroy)
+
+        self.db_name_label.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        self.db_passwd_label.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        self.db_name.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
+        self.db_passwd.grid(row=1, column=1, sticky="nsew", padx=5, pady=5)
+        self.submit.grid(row=2, column=0, sticky="nsew", padx=5, pady=5, columnspan=2)
+
+    def create_db(self):
+        self.grab_set()
+        self.wait_window()
+        return {'db_name': self.db_name_var.get(), 'password': self.password_var.get()}
+
 
 # Variables
 TYPE_RSA = crypto.TYPE_RSA
